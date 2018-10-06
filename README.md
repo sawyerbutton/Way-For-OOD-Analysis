@@ -70,3 +70,199 @@
 > 在交互行为结束后设计一个对象用来`表示一次交互活动的相关信息`,这些信息一方面体现了`交互活动的参与者`(交互时间，交互地点)，另一方面体现了`交互活动所产生的附加的信息`
 
 > 之所以将这些随着交互产生的信息定义为对象而不是值对象, 是因为这些信息并不是不可改变的内容, 相反这些信息更有可能在后续的交互过程中被更新
+
+### 图书管理系统场景举例
+
+#### 图书信息入库场景(假设)
+
+> 图书馆管理员扫描不同名称的书本的过程
+
+> 每本书都有一个ISBN，即`International Standard Book Number` - `国际标注书号`
+
+> 图书馆通过ISBN来管理书本，同一个ISBN的书可能有很多不同的副本，每一个副本就是一本真实存在书
+
+> 严格来说图书馆数据库中保存的是`书本的库存信息`
+
+> 在图书入库的场景中对于ISBN相同,即书名相同的书只会被扫描一次，管理员会输入这种书总共有多少本，应该放在什么地方等相关的库存信息
+
+#### 借书场景(假设)
+
+> 借书人持图书卡去图书馆，找到要借的书(单/复数)，带着书去借书处借书
+
+> 图书管理员扫描借书人的借书卡以及书本的条形码，条形码就是ISBN
+
+> 借书人借到书
+
+#### 还书场景(假设)
+
+> 借书人携带图书卡去图书馆，于还书处还书
+
+> 图书管理员扫描还书人的借书卡以及书本的条形码，如果有需要罚款的部分会同时计算
+
+> 还书人完成还书
+
+#### 图书入库场景的分析
+
+##### 场景参与者
+
+1. 图书馆`图书馆在整个图书借阅系统中只需要一个实例,且场景中并不在意是具体哪个图书馆, 故而设计成服务更为合理`
+2. 书本
+
+##### 参与者基本状态特征
+
+1. 书本的基本状态特征(书名,作者,ISBN出版社等)
+2. 图书馆的基本状态特征(`图书馆作为服务没有基本状态特征,也就是无状态,服务只提供服务性质的行为`)
+
+##### 场景交互过程分析
+
+1. 图书馆本身就具有图书入库的行为
+2. 图书入库时，图书馆服务会生成并保存一个书本的`库存信息`,该信息包含了`某个名称的书本的数量`,`书架位置信息`
+3. 该库存信息中的`Count`表示`某个名称的书共有几本`,当在借书或还书的场景发生时，这个Count就会改变
+
+```typescript
+public class StoreBookContext {
+    private library: ILibraryService;
+    private book: Book;
+    constructor(
+        private library: ILibraryService,
+        private book: Book
+    ) {
+        this.library = library;
+        this.book = book;
+    }
+    public Interaction(count: number,location: string): void{
+            this.library.StoreBook(this.book, count, location);
+    }
+}
+
+public class ILibraryService {
+    constructor(
+        private bookStoreInfo: BookStoreInfo,
+        private bookStoreInfoRepository: BookStoreInfoRepository
+    ) {}
+    public StoreBook(book: Book,count: number,location: string): void{
+    //图书入库时生成图书的库存信息
+        let bookStoreInfo = new BookStoreInfo(book, count);
+        bookStoreInfo.Location = location;
+        bookStoreInfoRepository.Add(bookStoreInfo);
+    }
+}
+// 交互之后，场景参与者的基本状态特征没有发生改变
+```
+
+#### 借书场景分析
+
+##### 场景参与者
+
+1. 图书馆注册帐号`借书人只是一个角色, 注册帐号扮演了借书人这个角色后可以行驶借书的行为`
+2. 图书馆`服务`
+3. 书本`值对象`
+
+##### 参与者基本状态特征
+
+1. 书本的基本状态特征`(书名,作者,出版社等)`
+2. 图书馆的基本状态特征`(服务是无状态的)`
+3. 注册帐号的基本状态`(卡号，所有者姓名，是否锁定)`
+
+##### 场景交互过程分析
+
+> 某个软件的使用者，即软件用户通过某个已注册帐号登录软件系统，选择想借的书之后点击“借书”按钮，该按钮触发一个借书的场景
+
+> 该场景创建时包含了部分的场景参与者，在借书这个例子中就是帐号和书，借书场景中帐号扮演借书者这个角色，帐号在扮演了借书者这个角色后对每一本书行驶借书的交互行为
+
+> 扮演了借书者角色的注册帐号自动具有了借书的行为，在该行为的内部实现中，通知图书馆把书借出来
+
+> 随后图书馆作为服务接到通知后，首先根据当前书本获取书本的库存信息，如果当前库存信息是0本，说明这本书没有库存，就抛出异常通知软件使用者这本书目前无法借出
+
+> 如果还有库存，则先更新库存信息，比如图书的数量减1，然后根据当前借书人，书本，以及当前时间生成一个借书信息对象，该对象可能还会包含一个理论图书归还时间的附加信息。最后将该借书信息对象保存起来
+
+```typescript
+ public class BorrowBooksContext
+    {
+        private account: LibraryAccount;
+        private books: Array<Book>;
+
+        public BorrowBooksContext(account: LibraryAccount, books: Array<Book>)
+        {
+            this.account = account;
+            this.books = books;
+        }
+
+        public void Interaction()
+        {
+            let borrower = account.ActAs<IBorrower>();
+            this.books.forEach(book => {
+                borrower.BorrowBook(book);
+            })
+        }
+    }
+public void BorrowBook(book: Book)
+{
+    //通知图书馆把书借给我
+    library.LendBook(book, this);
+}
+public void LendBook(book: Book, borrower: IBorrower)
+{
+    //更新书本在图书馆的库存信息，如：数量信息、所在书架位置信息
+    let bookStoreInfo = bookStoreInfoRepository.GetBookStoreInfo(book.Id);
+    if (bookStoreInfo.Count == 0)
+    {
+        throw new Exception(string.Format("The count of book '{0}' in library is zero, so you cannot borrow it.", book.BookName));
+    }
+    bookStoreInfo.DecreaseCount(); //数量减1
+    bookStoreInfo.Location = null; //位置清空
+
+    //生成借书信息并保存到Repository中
+    borrowInfoRepository.Add(new BorrowInfo(book, borrower, DateTime.Now));
+}
+// 交互之后，场景参与者的基本状态特征没有发生改变
+```
+
+#### 还书场景分析
+
+##### 与借书类似的过程
+
+1. 注册帐号扮演借阅者角色执行还书行为
+2. 执行过过程中通知图书馆接收某本要归还的书
+3. 图书馆接到通知后调出与该书本对应的那一次借书信息并更新其还书时间
+4. 最后更新图书的库存信息
+
+```typescript
+  public class ReturnBooksContext
+    {
+        private account: LibraryAccount;
+        private books: Array<Book>;
+
+        public ReturnBooksContext(account: LibraryAccount, books: Array<Book>)
+        {
+            this.account = account;
+            this.books = books;
+        }
+
+        public void Interaction()
+        {
+            let returnner = account.ActAs<IBorrower>();
+            this.books.forEach(book => {
+                returnner.ReturnBook(book);
+            })
+        }
+    }
+public void ReturnBook(book: Book)
+{
+    //通知图书馆接收我要归还的书
+    library.ReceiveReturnedBook(book, this);
+}
+public void ReceiveReturnedBook(book: Book, borrower: IBorrower)
+{
+    //设置借书信息的还书时间
+    var borrowedInfo = borrowInfoRepository.FindNotReturnedBorrowInfo(borrower.Id, book.Id);
+    borrowedInfo.ReturnTime = DateTime.Now;
+
+    //真正的系统还会计算归还时间是否超期，计算罚款之类的逻辑
+    // ...
+    //这里只更新书本的数量信息，因为还书时并不是马上把书本放回书架的，所以此时书本的书架位置信息还是保留为空
+    //等到我们将这本书放到书架的某个位置时，才会更新其位置信息
+    var bookStoreInfo = bookStoreInfoRepository.GetBookStoreInfo(book.Id);
+    bookStoreInfo.IncreaseCount(); //数量加1
+}
+```
